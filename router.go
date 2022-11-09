@@ -386,6 +386,18 @@ func (r *Router) recv(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+// LookupRoute allows the manual lookup of a method + path combo.
+// This is e.g. useful to build a framework around this router.
+// If the path was found, it returns the handle function, the router path matched,
+// and the path parameter values. The last return value indicates whether a redirection to
+// the same path with an extra / without the trailing slash should be performed.
+func (r *Router) LookupRoute(method, path string) (handler Handle, handledPath string, params *Params, trailingSlashRedirect bool) {
+	if root := r.trees[method]; root != nil {
+		return root.getValue(path, r.getParams)
+	}
+	return nil, "", nil, false
+}
+
 // Lookup allows the manual lookup of a method + path combo.
 // This is e.g. useful to build a framework around this router.
 // If the path was found, it returns the handle function and the path parameter
@@ -393,7 +405,7 @@ func (r *Router) recv(w http.ResponseWriter, req *http.Request) {
 // the same path with an extra / without the trailing slash should be performed.
 func (r *Router) Lookup(method, path string) (Handle, Params, bool) {
 	if root := r.trees[method]; root != nil {
-		handle, ps, tsr := root.getValue(path, r.getParams)
+		handle, _, ps, tsr := root.getValue(path, r.getParams)
 		if handle == nil {
 			r.putParams(ps)
 			return nil, nil, tsr
@@ -429,7 +441,7 @@ func (r *Router) allowed(path, reqMethod string) (allow string) {
 				continue
 			}
 
-			handle, _, _ := r.trees[method].getValue(path, nil)
+			handle, _, _, _ := r.trees[method].getValue(path, nil)
 			if handle != nil {
 				// Add request method to list of allowed methods
 				allowed = append(allowed, method)
@@ -466,7 +478,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	path := req.URL.Path
 
 	if root := r.trees[req.Method]; root != nil {
-		if handle, ps, tsr := root.getValue(path, r.getParams); handle != nil {
+		if handle, _, ps, tsr := root.getValue(path, r.getParams); handle != nil {
 			if ps != nil {
 				handle(w, req, *ps)
 				r.putParams(ps)

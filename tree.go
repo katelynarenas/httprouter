@@ -79,6 +79,7 @@ type node struct {
 	priority  uint32
 	children  []*node
 	handle    Handle
+	fullPath  string
 }
 
 // Increments priority of the given child and reorders if necessary
@@ -134,6 +135,7 @@ walk:
 				children:  n.children,
 				handle:    n.handle,
 				priority:  n.priority - 1,
+				fullPath:  n.fullPath,
 			}
 
 			n.children = []*node{&child}
@@ -142,6 +144,7 @@ walk:
 			n.path = path[:i]
 			n.handle = nil
 			n.wildChild = false
+
 		}
 
 		// Make new node a child of this node
@@ -196,7 +199,9 @@ walk:
 			if idxc != ':' && idxc != '*' {
 				// []byte for proper unicode char conversion, see #65
 				n.indices += string([]byte{idxc})
-				child := &node{}
+				child := &node{
+					fullPath: fullPath,
+				}
 				n.children = append(n.children, child)
 				n.incrementChildPrio(len(n.indices) - 1)
 				n = child
@@ -209,6 +214,7 @@ walk:
 		if n.handle != nil {
 			panic("a handle is already registered for path '" + fullPath + "'")
 		}
+		n.fullPath = fullPath
 		n.handle = handle
 		return
 	}
@@ -250,8 +256,9 @@ func (n *node) insertChild(path, fullPath string, handle Handle) {
 
 			n.wildChild = true
 			child := &node{
-				nType: param,
-				path:  wildcard,
+				fullPath: fullPath,
+				nType:    param,
+				path:     wildcard,
 			}
 			n.children = []*node{child}
 			n = child
@@ -262,6 +269,7 @@ func (n *node) insertChild(path, fullPath string, handle Handle) {
 			if len(wildcard) < len(path) {
 				path = path[len(wildcard):]
 				child := &node{
+					fullPath: fullPath,
 					priority: 1,
 				}
 				n.children = []*node{child}
@@ -293,6 +301,7 @@ func (n *node) insertChild(path, fullPath string, handle Handle) {
 
 		// First node: catchAll node with empty path
 		child := &node{
+			fullPath:  fullPath,
 			wildChild: true,
 			nType:     catchAll,
 		}
@@ -303,6 +312,7 @@ func (n *node) insertChild(path, fullPath string, handle Handle) {
 
 		// Second node: node holding the variable
 		child = &node{
+			fullPath: fullPath,
 			path:     path[i:],
 			nType:    catchAll,
 			handle:   handle,
@@ -314,6 +324,7 @@ func (n *node) insertChild(path, fullPath string, handle Handle) {
 	}
 
 	// If no wildcard was found, simply insert the path and handle
+	n.fullPath = fullPath
 	n.path = path
 	n.handle = handle
 }
@@ -323,7 +334,7 @@ func (n *node) insertChild(path, fullPath string, handle Handle) {
 // If no handle can be found, a TSR (trailing slash redirect) recommendation is
 // made if a handle exists with an extra (without the) trailing slash for the
 // given path.
-func (n *node) getValue(path string, params func() *Params) (handle Handle, ps *Params, tsr bool) {
+func (n *node) getValue(path string, params func() *Params) (handle Handle, matchPath string, ps *Params, tsr bool) {
 walk: // Outer loop for walking the tree
 	for {
 		prefix := n.path
@@ -388,6 +399,7 @@ walk: // Outer loop for walking the tree
 					}
 
 					if handle = n.handle; handle != nil {
+						matchPath = n.fullPath
 						return
 					} else if len(n.children) == 1 {
 						// No handle found. Check if a handle for this path + a
@@ -413,6 +425,7 @@ walk: // Outer loop for walking the tree
 						}
 					}
 
+					matchPath = n.fullPath
 					handle = n.handle
 					return
 
@@ -424,6 +437,7 @@ walk: // Outer loop for walking the tree
 			// We should have reached the node containing the handle.
 			// Check if this node has a handle registered.
 			if handle = n.handle; handle != nil {
+				matchPath = n.fullPath
 				return
 			}
 
